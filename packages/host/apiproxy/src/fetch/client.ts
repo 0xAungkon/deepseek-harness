@@ -6,6 +6,19 @@
  */
 
 import type { z } from 'zod'
+
+/**
+ * Generate an RFC 4122 version 4 UUID without requiring a secure context.
+ * Uses crypto.getRandomValues() which is available on insecure origins.
+ */
+function randomUuid(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  view.setUint8(6, (view.getUint8(6) & 0x0f) | 0x40)
+  view.setUint8(8, (view.getUint8(8) & 0x3f) | 0x80)
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 import type { ApiProxy, HostFrame, MuxFrame } from '../api/index.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, ClientResponse, RpcMessage, RpcReceipt, RpcRequest, RpcResponse, ServerRequest } from '../api/rpc.ts'
@@ -296,8 +309,8 @@ export abstract class AbstractApiClient implements IApiClient {
   }
 
   protected mintRpcId(): RpcId {
-    // crypto.randomUUID is a Web API (browser + Node ≥19): keeps this base platform-neutral.
-    return RpcId(crypto.randomUUID())
+    // Use polyfill that works in non-secure contexts (plain HTTP).
+    return RpcId(randomUuid())
   }
 
   /**

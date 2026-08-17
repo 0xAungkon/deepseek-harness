@@ -85,6 +85,10 @@ export const Config: z<ConnectionConfig> = z.object({
  * The model catalog (`llm.providers`, `llm.models`) is deliberately NOT here:
  * it carries provider ids, display names, and model lists — no endpoints,
  * keys, or key state — and a LAN client's model picker legitimately needs it.
+ *
+ * NOTE: When trustedHosts is non-empty, these methods are accessible to
+ * trusted hosts (not just loopback). This allows LAN access when explicitly
+ * configured via --host 0.0.0.0.
  */
 const PRIVILEGED_METHODS = new Set([
   // A preset composition names the plugins a session runs, so reading one is
@@ -144,7 +148,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
         : undefined
       if (method !== undefined
         && PRIVILEGED_METHODS.has(method)
-        && !isTrustedApiRequest(request, [])) {
+        && !isTrustedApiRequest(request, trustedHosts)) {
         return new Response('forbidden', { status: 403 })
       }
       if (request.method === 'GET' && (pathname === MUX_EVENTS_PATH || pathname === HOST_EVENTS_PATH)) {
