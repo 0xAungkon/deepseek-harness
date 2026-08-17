@@ -27,6 +27,10 @@ export interface WebStartupValues {
   port?: number
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
+  /** `--user`, HTTP Basic Auth username. */
+  user?: string
+  /** `--password`, HTTP Basic Auth password. */
+  password?: string
 }
 
 /** The web flag family, as commander parsed it. */
@@ -34,6 +38,8 @@ interface WebOptions {
   host?: string
   port?: string
   trustedHost?: string[]
+  user?: string
+  password?: string
 }
 
 /**
@@ -48,10 +54,14 @@ function webCommand(): Command {
     .option('--host <host>', 'bind host')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
+    .option('--user <user>', 'HTTP Basic Auth username (requires --password)')
+    .option('--password <password>', 'HTTP Basic Auth password (requires --user)')
     .addHelpText('after', `
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --port 8080              serve on another port
+  dsh --profile web --host 0.0.0.0 --user admin --password secret
+                                           serve with basic authentication
 `)
 }
 
@@ -69,10 +79,16 @@ export function apply(ctx: Context): void {
     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
     }
+    // Validate auth flags: both or neither must be provided
+    if ((options.user !== undefined) !== (options.password !== undefined)) {
+      program.error('error: --user and --password must be provided together')
+    }
     ctx.provide(WEB_STARTUP_SERVICE, {
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
       trustedHosts: options.trustedHost ?? [],
+      ...options.user !== undefined && { user: options.user },
+      ...options.password !== undefined && { password: options.password },
     } satisfies WebStartupValues)
   })
   parseCmdline(ctx, program)

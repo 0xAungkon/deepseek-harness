@@ -58,6 +58,8 @@ export const apply = ctx => globalThis.__webStartupApply(ctx)
     "    host: !!js ctx.webStartup.host ?? '127.0.0.1'",
     '    port: !!js ctx.webStartup.port ?? 3080',
     '    trustedHosts: !!js ctx.webStartup.trustedHosts',
+    '    user: !!js ctx.webStartup.user',
+    '    password: !!js ctx.webStartup.password',
     '- id: provider',
     `  name: ${pathToFileURL(join(dir, 'provider.mjs')).href}`,
     '',
@@ -132,7 +134,37 @@ describe('web command-line provider', () => {
   it('accepts the all-interfaces host', async () => {
     const { values, observed } = await bootProvider(['--host', '0.0.0.0'])
     expect(values).toEqual({ host: '0.0.0.0', trustedHosts: [] })
+    expect(observed.readerConfig).toEqual({ host: '0.0.0.0', port: 3080, trustedHosts: [] })
+    expect(observed.exits).toEqual([])
+  })
+
+  it('accepts a specific IP address', async () => {
+    const { values, observed } = await bootProvider(['--host', '192.168.0.101', '--port', '8030'])
+    expect(values).toEqual({ host: '192.168.0.101', port: 8030, trustedHosts: [] })
     expect(observed.readerConfig).toEqual(values)
     expect(observed.exits).toEqual([])
+  })
+
+  it('accepts auth flags when both are provided', async () => {
+    const { values, observed } = await bootProvider(['--user', 'admin', '--password', 'secret'])
+    expect(values).toEqual({ trustedHosts: [], user: 'admin', password: 'secret' })
+    expect(observed.readerConfig).toEqual({ host: '127.0.0.1', port: 3080, trustedHosts: [], user: 'admin', password: 'secret' })
+    expect(observed.exits).toEqual([])
+  })
+
+  it('rejects --user without --password', async () => {
+    const { values, observed } = await bootProvider(['--user', 'admin'])
+    expect(observed.out).toContain('--user and --password must be provided together')
+    expect(values).toBeUndefined()
+    expect(observed.readerConfig).toBeUndefined()
+    expect(observed.exits).toEqual([1])
+  })
+
+  it('rejects --password without --user', async () => {
+    const { values, observed } = await bootProvider(['--password', 'secret'])
+    expect(observed.out).toContain('--user and --password must be provided together')
+    expect(values).toBeUndefined()
+    expect(observed.readerConfig).toBeUndefined()
+    expect(observed.exits).toEqual([1])
   })
 })

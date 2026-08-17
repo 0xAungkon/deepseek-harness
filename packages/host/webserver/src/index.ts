@@ -41,12 +41,16 @@ export interface WebUpgradeRoute {
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
 }
 
-/** Gateway config: the listen address. */
+/** Gateway config: the listen address and optional authentication. */
 export interface Config {
-  /** Listen host; the two supported values are loopback and all-interfaces. */
-  host: '127.0.0.1' | '0.0.0.0'
+  /** Listen host; any IP address or hostname. */
+  host: string
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** HTTP Basic Auth username (optional). */
+  user?: string
+  /** HTTP Basic Auth password (optional). */
+  password?: string
 }
 
 /**
@@ -58,8 +62,10 @@ export interface Config {
  */
 export class WebServer extends Service {
   static Config: z<Config> = z.object({
-    host: z.union([z.const('127.0.0.1'), z.const('0.0.0.0')]).required(),
+    host: z.string().required(),
     port: z.natural().max(65535).required(),
+    user: z.string(),
+    password: z.string(),
   })
 
   private readonly exact = new Map<string, WebRoute>()
@@ -147,6 +153,24 @@ export class WebServer extends Service {
   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
   async [Service.init](): Promise<void> {
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      // HTTP Basic Authentication check
+      if (this.config.user !== undefined && this.config.password !== undefined) {
+        const authHeader = req.headers.authorization
+        if (authHeader === undefined || !authHeader.startsWith('Basic ')) {
+          res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="DeepSeek Harness"' })
+          res.end('Authentication required')
+          return
+        }
+        const decoded = Buffer.from(authHeader.slice(6), 'base64').toString()
+        const colonIndex = decoded.indexOf(':')
+        const user = colonIndex === -1 ? decoded : decoded.slice(0, colonIndex)
+        const password = colonIndex === -1 ? '' : decoded.slice(colonIndex + 1)
+        if (user !== this.config.user || password !== this.config.password) {
+          res.writeHead(401)
+          res.end('Invalid credentials')
+          return
+        }
+      }
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
       const rawPath = new URL(req.url ?? '/', 'http://x').pathname
@@ -188,6 +212,24 @@ export class WebServer extends Service {
         socket.off('error', onError)
         this.upgradedSockets.delete(socket)
       })
+      // HTTP Basic Authentication check for WebSocket upgrades
+      if (this.config.user !== undefined && this.config.password !== undefined) {
+        const authHeader = req.headers.authorization
+        if (authHeader === undefined || !authHeader.startsWith('Basic ')) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="DeepSeek Harness"\r\n\r\n')
+          socket.destroy()
+          return
+        }
+        const decoded = Buffer.from(authHeader.slice(6), 'base64').toString()
+        const colonIndex = decoded.indexOf(':')
+        const user = colonIndex === -1 ? decoded : decoded.slice(0, colonIndex)
+        const password = colonIndex === -1 ? '' : decoded.slice(colonIndex + 1)
+        if (user !== this.config.user || password !== this.config.password) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+          socket.destroy()
+          return
+        }
+      }
       let route: WebUpgradeRoute | undefined
       try {
         /* v8 ignore next -- node:http always sets url on server requests. */

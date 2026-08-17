@@ -118,6 +118,8 @@
       config:
         host: !!js ctx.webStartup.host ?? '127.0.0.1'
         port: !!js ctx.webStartup.port ?? 3080
+        user: !!js ctx.webStartup.user
+        password: !!js ctx.webStartup.password
 
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the
